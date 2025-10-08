@@ -1,0 +1,275 @@
+get the api key from OPENAI-API_KEY
+put that in your .env.local file 
+
+
+
+
+
+
+
+
+
+Creeren van content_chunks.txt
+
+create extension if not exists vector;
+
+CREATE TABLE public.content_chunks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  current_emotion text NOT NULL,
+  target_emotion text NOT NULL,
+  text text NOT NULL,
+  embedding vector(1536), -- pgvector column (1536 dims for OpenAI embeddings)
+  CONSTRAINT content_chunks_unique UNIQUE (id)
+) TABLESPACE pg_default;
+
+-- Enable Row Level Security
+ALTER TABLE public.content_chunks ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access
+CREATE POLICY "Allow public read access"
+ON public.content_chunks
+FOR SELECT
+TO public
+USING (true);
+
+
+importeren csv data 
+creeer met AI - met de columns die ik heb
+
+--------------------
+
+CREATE OR REPLACE FUNCTION match_chunks(
+  query_embedding vector,
+  checked_in_mood_param text,
+  destination_mood_param text,
+  match_count integer
+)
+RETURNS TABLE (
+  id text,
+  text text,
+  checked_in_mood text,
+  destination_mood text,
+  distance float
+)
+LANGUAGE sql
+AS $$
+  select
+    c.id,
+    c.text,
+    c.checked_in_mood,
+    c.destination_mood,
+    (c.embedding <-> query_embedding) as distance
+  from public.content_chunks c
+  where c.embedding is not null
+    and c.checked_in_mood = checked_in_mood_param
+    and c.destination_mood = destination_mood_param
+  order by c.embedding <-> query_embedding
+  limit match_count;
+$$;
+
+----------------
+
+in case you did it wrong: 
+DROP FUNCTION IF EXISTS match_chunks(vector, text, text, integer);
+
+Function parameters: in_current → checked_in_mood_param, in_target → destination_mood_param
+WHERE clause uses the new parameter names
+RETURNS TABLE columns already correct (checked_in_mood, destination_mood)
+API call updated to use new parameter names
+
+This creates perfect consistency throughout your entire stack!
+
+
+Test it with this SQL code
+
+-- Test with 1536 zeros
+SELECT * 
+FROM public.match_chunks(
+  ('[' || array_to_string(ARRAY(SELECT 0::float FROM generate_series(1,1536)), ',') || ']')::vector(1536),
+  'sad',
+  'calm',
+  5
+);
+
+
+
+
+-----
+create content_chunks 
+import .csv into there
+create match_chunks function
+write api/generate call in frontend
+write the api/generate/route.ts file 
+write the embedChunks.ts 
+
+
+---------
+:
+
+🌕 Section: Generating Guided Meditations (the “Ready Phase”)
+
+This part connects the frontend, AI, and Supabase vector database to create personalized guided meditations dynamically.
+
+Step 1 — Create the content_chunks table
+
+This table stores short text snippets (quotes, meditations, wisdom lines).
+Each one gets turned into a numerical embedding vector for AI similarity search.
+
+CREATE TABLE public.content_chunks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  checked_in_mood text NOT NULL,
+  destination_mood text NOT NULL,
+  text text NOT NULL,
+  embedding vector, -- pgvector column for AI embeddings
+  CONSTRAINT content_chunks_unique UNIQUE (id)
+);
+
+-- Enable Row-Level Security
+ALTER TABLE public.content_chunks ENABLE ROW LEVEL SECURITY;
+
+-- Policy: allow everyone to read chunks
+CREATE POLICY "Allow read access to content_chunks"
+ON public.content_chunks
+FOR SELECT
+TO public
+USING (true);
+
+Step 2 — Import your .csv data
+
+Go to Supabase → Table Editor → content_chunks → Import Data,
+and upload your .csv file containing columns like:
+
+checked_in_mood	destination_mood	text
+sad	calm	“Take a deep breath and find stillness.”
+anxious	grounded	“Your breath anchors you to this moment.”
+
+At this point, the embedding column will still be empty.
+We’ll fill it in later using OpenAI.
+
+Step 3 — Create the match_chunks() function
+
+This SQL function tells Supabase how to search your vector database for the most relevant chunks for a given emotion pair.
+
+DROP FUNCTION IF EXISTS match_chunks(vector, text, text, integer);
+
+CREATE OR REPLACE FUNCTION match_chunks(
+  query_embedding vector,
+  checked_in_mood_param text,
+  destination_mood_param text,
+  match_count integer
+)
+RETURNS TABLE (
+  id uuid,
+  text text,
+  checked_in_mood text,
+  destination_mood text,
+  distance float
+)
+LANGUAGE sql
+AS $$
+  SELECT
+    c.id,
+    c.text,
+    c.checked_in_mood,
+    c.destination_mood,
+    (c.embedding <-> query_embedding) AS distance
+  FROM public.content_chunks c
+  WHERE c.embedding IS NOT NULL
+    AND c.checked_in_mood = checked_in_mood_param
+    AND c.destination_mood = destination_mood_param
+  ORDER BY c.embedding <-> query_embedding
+  LIMIT match_count;
+$$;
+
+
+✅ This turns Supabase into a vector retrieval engine.
+When called from your app, it returns the most relevant pieces of text for the user’s mood.
+
+Step 4 — Write the embedChunks.ts script
+
+Before the AI can match anything, your text chunks must be embedded (vectorized).
+This script sends each chunk to OpenAI, stores the returned vector, and makes your table searchable.
+
+import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+async function main() {
+  const { data: chunks } = await supabase
+    .from("content_chunks")
+    .select("*")
+    .is("embedding", null);
+
+  for (const chunk of chunks || []) {
+    const res = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: chunk.text
+    });
+
+    const embedding = res.data[0].embedding;
+
+    await supabase
+      .from("content_chunks")
+      .update({ embedding })
+      .eq("id", chunk.id);
+
+    console.log(`✅ Embedded: ${chunk.id}`);
+  }
+}
+
+main();
+
+
+Run it once with:
+
+npx tsx scripts/embedChunks.ts
+
+
+Now, every text chunk has a real vector embedding in Supabase.
+
+Step 5 — Write the api/generate/route.ts file
+
+This is your AI generation API.
+It retrieves similar chunks using match_chunks(), sends them to OpenAI, and receives back a 6-phase guided meditation.
+
+✅ You already have the working version (your file is perfect).
+This is the heart of your app — it bridges emotions → embeddings → guided meditation.
+
+Step 6 — Connect to the frontend (the “Ready” phase)
+
+Your frontend page (/ready/page.tsx) sends the user’s emotional data to /api/generate.
+It:
+
+Shows progress (fetch → generate → narration)
+
+Calls the API you just made
+
+Displays the final AI-generated meditation and preloads everything for playback.
+
+✅ You already have this — and it connects directly to the backend we just built.
+
+🧩 Summary Flow
+Step	Component	Purpose
+1️⃣	content_chunks table	Store meditation texts
+2️⃣	Import .csv	Add your initial dataset
+3️⃣	match_chunks()	Enable vector similarity search
+4️⃣	embedChunks.ts	Convert text → embeddings
+5️⃣	/api/generate	Generate 6-phase meditation
+6️⃣	/ready/page.tsx	Display meditation progress + transition to playback
+🌈 After this stage
+
+You can run the full flow:
+→ Check-in → Destination → Ready → Meditation session 🎧
+
+And for your students, this is the “AI Generation” section of the manual — where they see how the app uses real data, real embeddings, and live AI calls to create something meaningful.
+
+Would you like me to format this section as part of your developer manual template (with comments, emojis, and teaching cues for students like “🧠 Why we do this”)? That would make it ready to paste into your starter-template README or slides.
+
+ChatGPT can make mistakes. Check important info. See Cookie Preferences.

@@ -1,0 +1,121 @@
+-- Drop old table if needed (optional if you're okay starting fresh)
+-- 🧹 Drop the existing table if you want a clean reset
+-- 🧹 Drop the old table completely and rebuild cleanly
+DROP TABLE IF EXISTS public.mood_entries CASCADE;
+
+-- ✅ Create a clean version of mood_entries
+CREATE TABLE public.mood_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz DEFAULT now(),
+  user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
+  checked_in_mood text NOT NULL,
+  destination_mood text,
+  note text
+);
+
+-- 🔒 Enable Row Level Security
+ALTER TABLE public.mood_entries ENABLE ROW LEVEL SECURITY;
+
+-- ✅ Policies
+CREATE POLICY "Users can insert their own mood entries"
+ON public.mood_entries
+FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view their own mood entries"
+ON public.mood_entries
+FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own mood entries"
+ON public.mood_entries
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own mood entries"
+ON public.mood_entries
+FOR DELETE
+TO authenticated
+USING (auth.uid() = user_id);
+
+
+
+-- Drop the old table if needed
+DROP TABLE IF EXISTS public.meditation_sessions CASCADE;
+
+-- ✅ Create table
+CREATE TABLE public.meditation_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz DEFAULT now(),
+  user_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  mood_entry_id uuid NOT NULL REFERENCES public.mood_entries (id) ON DELETE CASCADE,
+  completed boolean NOT NULL DEFAULT false,
+  duration_seconds integer,
+  script text
+);
+
+-- 🔒 Enable Row-Level Security
+ALTER TABLE public.meditation_sessions ENABLE ROW LEVEL SECURITY;
+
+-- ✅ Simplified policies (you had a few duplicates)
+CREATE POLICY "Users can insert their own sessions"
+ON public.meditation_sessions
+FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view their own sessions"
+ON public.meditation_sessions
+FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own sessions"
+ON public.meditation_sessions
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own sessions"
+ON public.meditation_sessions
+FOR DELETE
+TO authenticated
+USING (auth.uid() = user_id);
+
+
+-- Drop existing content_chunks (if you want to clean reset)
+DROP TABLE IF EXISTS public.content_chunks CASCADE;
+
+-- ✅ Recreate with pgvector support
+CREATE TABLE public.content_chunks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  checked_in_mood text NOT NULL,
+  destination_mood text NOT NULL,
+  text text NOT NULL,
+  embedding vector(1536)
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.content_chunks ENABLE ROW LEVEL SECURITY;
+
+-- Allow read access to everyone (safe for public reading)
+CREATE POLICY "Allow public read access"
+ON public.content_chunks
+FOR SELECT
+TO public
+USING (true);
+
+
+
+
+
+
+
+ 📝 when you want to delete something: 
+  DROP TABLE IF EXISTS public.mood_entries_test_01 CASCADE;

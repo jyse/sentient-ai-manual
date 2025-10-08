@@ -1,0 +1,83 @@
+
+Sentient AI — Local Setup (Supabase + Env)
+0) Prereqs
+
+Node 18+ (or 20+)
+npm (comes with Node)
+A Supabase account
+
+1) Get the code running locally
+# clone your manual repo (or the starter)
+git clone <YOUR_REPO_URL> sentient-ai-manual
+cd sentient-ai-manual
+
+# install deps
+npm install
+
+# fix the known missing UI dep (Radix direction)
+npm install @radix-ui/react-direction
+
+If you ever see vite: command not found, it almost always means npm install hasn’t run or your package.json “dev” script is wrong. This project should use next dev.
+
+2) Create a Supabase project (one time)
+Go to supabase.com → Sign in (GitHub/Google).
+Click New Project → pick/ create an organization.
+Name it (e.g., Sentient AI Manual), choose a DB password, select your region, Create project.
+Wait ~1–2 minutes for provisioning.
+
+3) Grab your Supabase API values
+In your Supabase project:
+Left sidebar → ⚙️ Settings → API Keys
+Copy:
+
+Project URL (e.g., https://abcxyz.supabase.co)
+anon public key
+service_role key (keep private; server only)
+
+4) Add your environment file
+Create .env.local in your project root with:
+
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+
+The first two keys are needed in the browser.
+SUPABASE_SERVICE_ROLE_KEY is server-only (e.g., API routes).
+
+Optional: also add a shareable template:
+
+# .env.example
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+OPENAI_API_KEY=
+
+5) (Important) Supabase Auth URL config
+
+If you use OAuth or magic links, set this so redirects work:
+Supabase → Authentication → URL Configuration
+Site URL: http://localhost:3000
+Redirect URLs: add http://localhost:3000/*
+
+6) Run the app
+npm run dev
+
+Open: http://localhost:3000
+You should see the login screen.
+
+7) Quick troubleshooting
+Runtime error: “Your project’s URL and API key are required…”
+→ .env.local missing or keys wrong. Recheck Settings → API Keys.
+Module not found: @radix-ui/react-direction (or similar)
+→ npm install @radix-ui/react-direction (or the missing package shown).
+vite: command not found
+→ run npm install. If still failing, ensure package.json has
+"dev": "next dev" and then npm run dev.
+401/403 from Supabase
+→ check you used the anon key in the browser, and your project isn’t paused.
+8) Student setup (copy block)
+Create a Supabase project.
+Settings → API Keys → copy Project URL + anon.
+Create .env.local with those values.
+npm install && npm run dev.
