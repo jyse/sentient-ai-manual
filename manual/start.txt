@@ -81,3 +81,9 @@ Create a Supabase project.
 Settings → API Keys → copy Project URL + anon.
 Create .env.local with those values.
 npm install && npm run dev.
+
+Log in 
+Sign up 
+Get an email 
+And then click the link there
+login again 
